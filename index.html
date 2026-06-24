@@ -53,7 +53,7 @@
             height: 200px;
             background: rgba(0, 15, 15, 0.85);
             border: 2px solid #0ff;
-            border-radius: 50%; /* Сделаем круглым для стиля */
+            border-radius: 50%;
             z-index: 10;
             pointer-events: none;
             box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
@@ -70,14 +70,17 @@
             color: #0ff; 
             z-index: 20; 
         }
+        /* Обновленная сетка для кнопок */
         .diff-btns {
-            display: flex;
-            gap: 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
             margin-top: 20px;
+            max-width: 900px;
         }
         .menu-btn {
-            padding: 15px 30px;
-            font-size: 20px;
+            padding: 15px 20px;
+            font-size: 18px;
             font-weight: bold;
             font-family: 'Courier New', Courier, monospace;
             background-color: transparent;
@@ -94,6 +97,16 @@
             color: #000;
             box-shadow: 0 0 20px #0ff, inset 0 0 20px #0ff;
         }
+        /* Специфичные цвета для новых уровней */
+        #btn-mega { color: #f0f; border-color: #f0f; text-shadow: 0 0 10px #f0f; box-shadow: 0 0 10px #f0f, inset 0 0 10px #f0f; }
+        #btn-mega:hover { background-color: #f0f; color: #000; box-shadow: 0 0 20px #f0f, inset 0 0 20px #f0f; }
+        
+        #btn-devil { color: #f00; border-color: #f00; text-shadow: 0 0 10px #f00; box-shadow: 0 0 10px #f00, inset 0 0 10px #f00; }
+        #btn-devil:hover { background-color: #f00; color: #000; box-shadow: 0 0 20px #f00, inset 0 0 20px #f00; }
+        
+        #btn-dont { color: #500; border-color: #500; text-shadow: 0 0 10px #500; box-shadow: 0 0 10px #500, inset 0 0 10px #500; }
+        #btn-dont:hover { background-color: #500; color: #fff; box-shadow: 0 0 20px #500, inset 0 0 20px #500; }
+
         #end-screen {
             display: none;
             position: absolute;
@@ -131,6 +144,9 @@
             <button class="menu-btn" id="btn-easy">EASY (25)</button>
             <button class="menu-btn" id="btn-medium">MEDIUM (35)</button>
             <button class="menu-btn" id="btn-hard">HARD (50)</button>
+            <button class="menu-btn" id="btn-mega">MEGA HARD (70)</button>
+            <button class="menu-btn" id="btn-devil">DEVIL (100)</button>
+            <button class="menu-btn" id="btn-dont">DONT TRY THIS ONE (150)</button>
         </div>
         <p style="color: #888; margin-top: 30px;">WASD - Move | SHIFT - Sprint | Mouse - Look | Click - Shoot</p>
     </div>
@@ -151,18 +167,23 @@
         const playerLight = new THREE.PointLight(0x00ffff, 0.8, 20); 
         scene.add(playerLight);
 
-        // УВЕЛИЧЕННАЯ АРЕНА (150x150)
-        const arenaSize = 150;
-        const gridHelper = new THREE.GridHelper(arenaSize, 75, 0x00ffff, 0x002222);
-        gridHelper.position.y = 0;
-        scene.add(gridHelper);
-
-        const wallBoxes = []; 
-        const collidableMeshes = [];
+        // --- ДИНАМИЧЕСКАЯ АРЕНА ---
+        let baseArenaSize = 150;
+        let currentArenaSize = 150;
+        let wallBoxes = []; 
+        let collidableMeshes = [];
+        let arenaObjects = []; // Для очистки при перегенерации
 
         const wallMat = new THREE.MeshPhongMaterial({ color: 0x080808, shininess: 5 }); 
         const neonCyanMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
         const neonPurpleMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+
+        function clearArena() {
+            arenaObjects.forEach(obj => scene.remove(obj));
+            arenaObjects = [];
+            wallBoxes = [];
+            collidableMeshes = [];
+        }
 
         function createWallBlock(x, z, width, depth) {
             const height = 8;
@@ -171,6 +192,7 @@
             wall.position.set(x, height / 2, z);
             scene.add(wall);
             collidableMeshes.push(wall); 
+            arenaObjects.push(wall);
 
             wall.updateMatrixWorld();
             const box = new THREE.Box3().setFromObject(wall);
@@ -181,71 +203,90 @@
             const top = new THREE.Mesh(topGeo, isCyan ? neonCyanMat : neonPurpleMat);
             top.position.set(x, height + 0.05, z);
             scene.add(top);
+            arenaObjects.push(top);
         }
 
-        // ВНЕШНИЕ БАРЬЕРЫ
-        createWallBlock(0, -arenaSize/2, arenaSize, 2); 
-        createWallBlock(0, arenaSize/2, arenaSize, 2);  
-        createWallBlock(-arenaSize/2, 0, 2, arenaSize); 
-        createWallBlock(arenaSize/2, 0, 2, arenaSize);  
+        function buildArena(multiplier) {
+            clearArena();
+            currentArenaSize = baseArenaSize * multiplier;
+            
+            // Настройка тумана под размер
+            scene.fog.density = 0.015 / multiplier;
 
-        // ГУСТОЙ, НО 100% ПРОХОДИМЫЙ ЛАБИРИНТ (Решение проблемы со скриншота image_297137.png)
-        const gridSpacing = 14; 
-        const halfSize = arenaSize / 2;
+            const gridHelper = new THREE.GridHelper(currentArenaSize, Math.floor(currentArenaSize/2), 0x00ffff, 0x002222);
+            gridHelper.position.y = 0;
+            scene.add(gridHelper);
+            arenaObjects.push(gridHelper);
 
-        for (let x = -halfSize + 15; x < halfSize - 15; x += gridSpacing) {
-            for (let z = -halfSize + 15; z < halfSize - 15; z += gridSpacing) {
-                // Большая безопасная зона в центре под спавн игрока
-                if (Math.abs(x) < 22 && Math.abs(z) < 22) continue;
-                
-                if (Math.random() > 0.35) {
-                    // Размеры строго ограничены, чтобы коридоры всегда оставались широкими и сквозными
-                    const w = 5 + Math.random() * 5;
-                    const d = 5 + Math.random() * 5;
-                    const offsetX = (Math.random() - 0.5) * 3;
-                    const offsetZ = (Math.random() - 0.5) * 3;
+            // ВНЕШНИЕ БАРЬЕРЫ
+            createWallBlock(0, -currentArenaSize/2, currentArenaSize, 2); 
+            createWallBlock(0, currentArenaSize/2, currentArenaSize, 2);  
+            createWallBlock(-currentArenaSize/2, 0, 2, currentArenaSize); 
+            createWallBlock(currentArenaSize/2, 0, 2, currentArenaSize);  
+
+            // ЛАБИРИНТ
+            const gridSpacing = 14; 
+            const halfSize = currentArenaSize / 2;
+
+            for (let x = -halfSize + 15; x < halfSize - 15; x += gridSpacing) {
+                for (let z = -halfSize + 15; z < halfSize - 15; z += gridSpacing) {
+                    if (Math.abs(x) < 22 && Math.abs(z) < 22) continue; // Безопасная зона в центре
                     
-                    createWallBlock(x + offsetX, z + offsetZ, w, d);
+                    if (Math.random() > 0.35) {
+                        const w = 5 + Math.random() * 5;
+                        const d = 5 + Math.random() * 5;
+                        const offsetX = (Math.random() - 0.5) * 3;
+                        const offsetZ = (Math.random() - 0.5) * 3;
+                        createWallBlock(x + offsetX, z + offsetZ, w, d);
+                    }
                 }
             }
         }
 
-        // СИСТЕМА ОРУЖИЯ
+        // --- СИСТЕМА ОРУЖИЯ ---
         let currentWeapon = 'normal'; 
-        let unlocked = { dual: false, mega: false };
+        let unlocked = { dual: false, mega: false, dual_mega: false, bazooka: false };
 
         const normalGunMat = new THREE.MeshPhongMaterial({color: 0x222222, emissive: 0x003333});
         const megaGunMat = new THREE.MeshPhongMaterial({color: 0x111111, emissive: 0x330000});
+        const bazookaMat = new THREE.MeshPhongMaterial({color: 0x223311, emissive: 0x112200});
         
+        // Обычные пистолеты
         const gunRight = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.6), normalGunMat);
         gunRight.position.set(0.3, -0.3, -0.6);
-        
         const gunLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.6), normalGunMat);
         gunLeft.position.set(-0.3, -0.3, -0.6);
 
+        // Mega Gun
         const megaGun = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 1.0), megaGunMat);
         megaGun.position.set(0, -0.4, -0.8);
 
-        function updateWeaponVis() {
-            camera.remove(gunRight, gunLeft, megaGun);
-            if (currentWeapon === 'normal') {
-                camera.add(gunRight);
-                document.getElementById('weapon-info').innerText = "WEAPON: PISTOL";
-            }
-            if (currentWeapon === 'dual') {
-                camera.add(gunRight);
-                camera.add(gunLeft);
-                document.getElementById('weapon-info').innerText = "WEAPON: DUAL WIELD";
-            }
-            if (currentWeapon === 'mega') {
-                camera.add(megaGun);
-                document.getElementById('weapon-info').innerText = "WEAPON: MEGA GUN (AUTO)";
-            }
-        }
-        updateWeaponVis();
+        // Dual Mega
+        const megaRight = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.0), megaGunMat);
+        megaRight.position.set(0.4, -0.4, -0.8);
+        const megaLeft = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.0), megaGunMat);
+        megaLeft.position.set(-0.4, -0.4, -0.8);
 
-        // СОСТОЯНИЕ ИГРЫ
-        let initialSettings = { bots: 25, speed: 2.0 }; 
+        // Bazooka
+        const bazooka = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 1.5, 16), bazookaMat);
+        bazooka.rotation.x = Math.PI / 2;
+        bazooka.position.set(0.3, -0.4, -0.8);
+
+        function updateWeaponVis() {
+            camera.remove(gunRight, gunLeft, megaGun, megaRight, megaLeft, bazooka);
+            let infoText = "WEAPON: PISTOL";
+
+            if (currentWeapon === 'normal') { camera.add(gunRight); }
+            if (currentWeapon === 'dual') { camera.add(gunRight); camera.add(gunLeft); infoText = "WEAPON: DUAL WIELD"; }
+            if (currentWeapon === 'mega') { camera.add(megaGun); infoText = "WEAPON: MEGA GUN (AUTO)"; }
+            if (currentWeapon === 'dual_mega') { camera.add(megaRight); camera.add(megaLeft); infoText = "WEAPON: DUAL MEGA (AUTO)"; }
+            if (currentWeapon === 'bazooka') { camera.add(bazooka); infoText = "WEAPON: BAZOOKA (AREA DMG)"; }
+
+            document.getElementById('weapon-info').innerText = infoText;
+        }
+
+        // --- СОСТОЯНИЕ ИГРЫ ---
+        let initialSettings = { bots: 25, speed: 2.0, arenaMult: 1.0 }; 
         let maxBots = 25, bots = [], isGameActive = false;
 
         const botsLeftUI = document.getElementById('bots-left');
@@ -286,8 +327,8 @@
             let bx, bz, attempts = 0;
             
             while(!validPosition && attempts < 150) {
-                bx = (Math.random() - 0.5) * (arenaSize - 6);
-                bz = (Math.random() - 0.5) * (arenaSize - 6);
+                bx = (Math.random() - 0.5) * (currentArenaSize - 6);
+                bz = (Math.random() - 0.5) * (currentArenaSize - 6);
                 
                 let box = new THREE.Box3(new THREE.Vector3(bx-1.5, 0, bz-1.5), new THREE.Vector3(bx+1.5, 2, bz+1.5));
                 let inWall = wallBoxes.some(w => w.intersectsBox(box));
@@ -304,16 +345,23 @@
             }
         }
 
-        function startGame(diffBots, diffSpeed) {
+        function startGame(diffBots, diffSpeed, arenaMult) {
             initialSettings.bots = diffBots;
             initialSettings.speed = diffSpeed;
+            initialSettings.arenaMult = arenaMult;
             maxBots = diffBots;
             isGameActive = true;
             
-            if (unlocked.mega) currentWeapon = 'mega';
+            // Выбор лучшего доступного оружия
+            if (unlocked.bazooka) currentWeapon = 'bazooka';
+            else if (unlocked.dual_mega) currentWeapon = 'dual_mega';
+            else if (unlocked.mega) currentWeapon = 'mega';
             else if (unlocked.dual) currentWeapon = 'dual';
             else currentWeapon = 'normal';
             updateWeaponVis();
+
+            // Перестройка арены
+            buildArena(arenaMult);
 
             bots.forEach(b => scene.remove(b));
             bots = [];
@@ -323,9 +371,12 @@
             document.body.requestPointerLock();
         }
 
-        document.getElementById('btn-easy').addEventListener('click', () => startGame(25, 2.0));
-        document.getElementById('btn-medium').addEventListener('click', () => startGame(35, 2.5));
-        document.getElementById('btn-hard').addEventListener('click', () => startGame(50, 3.0));
+        document.getElementById('btn-easy').addEventListener('click', () => startGame(25, 2.0, 1.0));
+        document.getElementById('btn-medium').addEventListener('click', () => startGame(35, 2.5, 1.0));
+        document.getElementById('btn-hard').addEventListener('click', () => startGame(50, 3.0, 1.0));
+        document.getElementById('btn-mega').addEventListener('click', () => startGame(70, 4.5, 1.5));
+        document.getElementById('btn-devil').addEventListener('click', () => startGame(100, 6.0, 2.0));
+        document.getElementById('btn-dont').addEventListener('click', () => startGame(150, 6.0, 4.0));
 
         document.addEventListener('pointerlockchange', () => {
             if (document.pointerLockElement === document.body) {
@@ -346,7 +397,6 @@
             }
         });
 
-        // КЛИКИ И УПРАВЛЕНИЕ (ДОБАВЛЕН SHIFT)
         const keys = { w: false, a: false, s: false, d: false, shift: false };
         document.addEventListener('keydown', (e) => { 
             if (e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true; 
@@ -368,6 +418,7 @@
                 if (e.button === 0) fireRaycast('right'); 
                 if (e.button === 2) fireRaycast('left');  
             }
+            if (currentWeapon === 'bazooka' && e.button === 0) fireBazooka();
         });
         document.addEventListener('mouseup', (e) => {
             if (e.button === 0) mouseL = false;
@@ -376,6 +427,23 @@
 
         const raycaster = new THREE.Raycaster();
         
+        function drawLaser(startOffset, endPoint, colorStr) {
+            const offset = new THREE.Vector3().copy(startOffset);
+            offset.applyQuaternion(camera.quaternion);
+            const startPoint = camera.position.clone().add(offset);
+            
+            const lineMat = new THREE.LineBasicMaterial({ color: colorStr });
+            const laserGeo = new THREE.BufferGeometry().setFromPoints([startPoint, endPoint]);
+            const laser = new THREE.Line(laserGeo, lineMat);
+            scene.add(laser);
+            setTimeout(() => scene.remove(laser), 50);
+        }
+
+        function animateGun(gunObj) {
+            gunObj.position.z += 0.1;
+            setTimeout(() => { gunObj.position.z -= 0.1; }, 50);
+        }
+
         function fireRaycast(originStr) {
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targets = [...collidableMeshes];
@@ -393,28 +461,60 @@
                     scene.remove(parentGroup);
                     bots = bots.filter(b => b !== parentGroup);
                     botsLeftUI.innerText = bots.length;
-
                     if (bots.length === 0) handleWin();
                 }
             }
 
-            const offset = new THREE.Vector3();
-            if (originStr === 'right') offset.set(0.3, -0.3, -0.6);
-            if (originStr === 'left') offset.set(-0.3, -0.3, -0.6);
-            if (originStr === 'center') offset.set(0, -0.4, -0.8);
-            
-            offset.applyQuaternion(camera.quaternion);
-            const startPoint = camera.position.clone().add(offset);
-            
-            const lineMat = new THREE.LineBasicMaterial({ color: originStr === 'center' ? 0xff0000 : 0x00ffff });
-            const laserGeo = new THREE.BufferGeometry().setFromPoints([startPoint, endPoint]);
-            const laser = new THREE.Line(laserGeo, lineMat);
-            scene.add(laser);
-            setTimeout(() => scene.remove(laser), 50);
+            if (originStr === 'right') { drawLaser(new THREE.Vector3(0.3, -0.3, -0.6), endPoint, 0x00ffff); animateGun(gunRight); }
+            if (originStr === 'left') { drawLaser(new THREE.Vector3(-0.3, -0.3, -0.6), endPoint, 0x00ffff); animateGun(gunLeft); }
+            if (originStr === 'center') { drawLaser(new THREE.Vector3(0, -0.4, -0.8), endPoint, 0xff0000); animateGun(megaGun); }
+            if (originStr === 'megaR') { drawLaser(new THREE.Vector3(0.4, -0.4, -0.8), endPoint, 0xff00ff); animateGun(megaRight); }
+            if (originStr === 'megaL') { drawLaser(new THREE.Vector3(-0.4, -0.4, -0.8), endPoint, 0xff00ff); animateGun(megaLeft); }
+        }
 
-            let activeGun = originStr === 'right' ? gunRight : (originStr === 'left' ? gunLeft : megaGun);
-            activeGun.position.z += 0.1;
-            setTimeout(() => { activeGun.position.z -= 0.1; }, 50);
+        function fireBazooka() {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            let targets = [...collidableMeshes];
+            bots.forEach(b => targets.push(...b.children));
+            
+            const intersects = raycaster.intersectObjects(targets);
+            let endPoint = raycaster.ray.at(150, new THREE.Vector3());
+            if (intersects.length > 0) endPoint = intersects[0].point;
+
+            // Визуализация ракеты
+            drawLaser(new THREE.Vector3(0.3, -0.4, -0.8), endPoint, 0xffff00);
+            animateGun(bazooka);
+
+            // Эффект взрыва
+            const explosionGeo = new THREE.SphereGeometry(12, 16, 16);
+            const explosionMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.8 });
+            const explosion = new THREE.Mesh(explosionGeo, explosionMat);
+            explosion.position.copy(endPoint);
+            scene.add(explosion);
+
+            let scale = 1.0;
+            const explodeAnim = setInterval(() => {
+                scale += 0.2;
+                explosion.scale.set(scale, scale, scale);
+                explosion.material.opacity -= 0.1;
+                if (explosion.material.opacity <= 0) {
+                    scene.remove(explosion);
+                    clearInterval(explodeAnim);
+                }
+            }, 30);
+
+            // Урон по площади
+            let botsToKill = [];
+            bots.forEach(bot => {
+                if (bot.position.distanceTo(endPoint) <= 15) botsToKill.push(bot);
+            });
+
+            botsToKill.forEach(bot => {
+                scene.remove(bot);
+                bots = bots.filter(b => b !== bot);
+            });
+            botsLeftUI.innerText = bots.length;
+            if (bots.length === 0) handleWin();
         }
 
         function handleWin() {
@@ -427,11 +527,15 @@
             
             let unlockMsg = "MISSION ACCOMPLISHED";
             if (initialSettings.bots === 35 && !unlocked.dual) {
-                unlocked.dual = true;
-                unlockMsg = "UNLOCKED: DUAL WIELD PISTOLS";
+                unlocked.dual = true; unlockMsg = "UNLOCKED: DUAL WIELD PISTOLS";
             } else if (initialSettings.bots === 50 && !unlocked.mega) {
-                unlocked.mega = true;
-                unlockMsg = "UNLOCKED: MEGA GUN (RATATATA!)";
+                unlocked.mega = true; unlockMsg = "UNLOCKED: MEGA GUN (RATATATA!)";
+            } else if (initialSettings.bots === 70 && !unlocked.dual_mega) {
+                unlocked.dual_mega = true; unlockMsg = "UNLOCKED: DOUBLE RATATATA!";
+            } else if (initialSettings.bots === 100 && !unlocked.bazooka) {
+                unlocked.bazooka = true; unlockMsg = "UNLOCKED: THE BAZOOKA";
+            } else if (initialSettings.bots === 150) {
+                unlockMsg = "YOU SURVIVED THE IMPOSSIBLE!";
             }
 
             endMsg.innerText = unlockMsg;
@@ -474,23 +578,18 @@
             return wallBoxes.some(w => w.intersectsBox(box));
         }
 
-        // ОБНОВЛЕННАЯ ТАКТИЧЕСКАЯ ВРАЩАЮЩАЯСЯ МИНИКАРТА
         function updateMinimap() {
             mapCtx.clearRect(0, 0, mapSize, mapSize);
             
-            const viewRadius = 45; // Радиус обзора радара в игровых метрах вокруг игрока
+            const viewRadius = 45 * initialSettings.arenaMult; // Радар немного отдаляется на больших аренах
             const scale = mapSize / (viewRadius * 2);
             
             mapCtx.save();
-            // Сдвигаем холст в центр круга
             mapCtx.translate(mapSize / 2, mapSize / 2);
-            // Вращаем карту ПРОТИВ направления взгляда игрока (euler.y)
             mapCtx.rotate(euler.y); 
-            // Применяем масштаб и сдвигаем систему координат на позицию игрока
             mapCtx.scale(scale, scale);
             mapCtx.translate(-camera.position.x, -camera.position.z);
             
-            // Рисуем стены в мировых координатах
             mapCtx.fillStyle = '#002525';
             wallBoxes.forEach(box => {
                 const w = box.max.x - box.min.x;
@@ -498,7 +597,6 @@
                 mapCtx.fillRect(box.min.x, box.min.z, w, h);
             });
 
-            // Рисуем ботов в мировых координатах
             mapCtx.fillStyle = '#ff0000';
             bots.forEach(bot => {
                 mapCtx.beginPath();
@@ -508,12 +606,11 @@
             
             mapCtx.restore();
 
-            // Игрок ВСЕГДА жестко в центре радара и смотрит строго ВВЕРХ (стрелочка направления)
             mapCtx.fillStyle = '#00ffff';
             mapCtx.beginPath();
-            mapCtx.moveTo(mapSize / 2, mapSize / 2 - 8);   // Нос стрелки
-            mapCtx.lineTo(mapSize / 2 - 5, mapSize / 2 + 5); // Левое крыло
-            mapCtx.lineTo(mapSize / 2 + 5, mapSize / 2 + 5); // Правое крыло
+            mapCtx.moveTo(mapSize / 2, mapSize / 2 - 8);   
+            mapCtx.lineTo(mapSize / 2 - 5, mapSize / 2 + 5); 
+            mapCtx.lineTo(mapSize / 2 + 5, mapSize / 2 + 5); 
             mapCtx.closePath();
             mapCtx.fill();
         }
@@ -522,6 +619,7 @@
         const direction = new THREE.Vector3();
         let lastTime = performance.now();
         let lastAutoFireTime = 0;
+        let toggleDual = false;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -532,13 +630,16 @@
             if (document.pointerLockElement === document.body && isGameActive) {
                 playerLight.position.set(camera.position.x, camera.position.y, camera.position.z);
 
-                // АВТОМАТ ДЛЯ MEGA GUN
-                if (currentWeapon === 'mega' && mouseL && (time - lastAutoFireTime) > 90) {
-                    fireRaycast('center');
+                // АВТОМАТ ДЛЯ MEGA GUN и DUAL MEGA
+                if ((currentWeapon === 'mega' || currentWeapon === 'dual_mega') && mouseL && (time - lastAutoFireTime) > 90) {
+                    if (currentWeapon === 'mega') fireRaycast('center');
+                    if (currentWeapon === 'dual_mega') {
+                        fireRaycast(toggleDual ? 'megaR' : 'megaL');
+                        toggleDual = !toggleDual;
+                    }
                     lastAutoFireTime = time;
                 }
 
-                // ДВИЖЕНИЕ ИГРОКА С УЧЕТОМ СУПЕР-СПРИНТА (SHIFT)
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
 
@@ -546,7 +647,6 @@
                 direction.x = Number(keys.d) - Number(keys.a); 
                 direction.normalize();
 
-                // Базовая скорость 70, на шифте — 105 (быстрее ровно на 0.5х от базы)
                 const speed = keys.shift ? 105.0 : 70.0;
                 
                 if (keys.w || keys.s) velocity.z -= direction.z * speed * delta; 
@@ -568,7 +668,6 @@
 
                 camera.position.y = 1.6;
 
-                // ЛОГИКА БОТОВ
                 const playerPos2D = new THREE.Vector3(camera.position.x, 0, camera.position.z);
                 
                 bots.forEach(bot => {
@@ -611,7 +710,6 @@
                     }
                 });
 
-                // Обновляем радар
                 updateMinimap();
             }
 
